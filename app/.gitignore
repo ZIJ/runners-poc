@@ -1,0 +1,53 @@
+# Logs
+logs/
+*.log
+*.log.*
+
+# Node / TypeScript
+node_modules/
+dist/
+build/
+lib/
+coverage/
+.nyc_output/
+.eslintcache
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editors/OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# Docker
+.dockerignore
+
+# GitHub App secrets / certs
+*.pem
+
+# Go (future runner)
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# OpenTofu/Terraform artifacts
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+terraform.tfvars
+*.tfvars
+
