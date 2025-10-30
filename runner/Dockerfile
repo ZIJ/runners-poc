@@ -8,7 +8,7 @@ WORKDIR /src
 COPY runner/go.mod runner/go.sum ./
 RUN go mod download
 COPY runner/ ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/runner
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/runner ./cmd/runner
 
 FROM debian:bookworm-slim AS runtime
 ARG TOFU_VERSION
@@ -34,4 +34,3 @@ RUN useradd -m -u 10001 runner && chown -R runner:runner /app
 USER runner
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/runner"]
-

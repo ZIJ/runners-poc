@@ -10,26 +10,24 @@ This document guides contributors and automation on how this POC is structured. 
   - Planned next: publish to Pub/Sub topic `plan`.
 
 - Runner service (`/runner`, Go)
-  - Subscribes to `plan`.
-  - Checks out the repository at the specified ref.
-  - Runs `opentofu init` and `opentofu plan` (no-color), captures output.
-  - Posts or updates a PR comment with the plan result.
+  - Exposes `POST /pubsub/push` on Cloud Run (push delivery).
+  - Decodes Pub/Sub envelope, executes OpenTofu plan, and comments results.
 
 - Google Cloud Run (region `us-east4`)
   - Hosts both services as separate deployments.
   - Uses dedicated service accounts with least-privilege IAM.
 
 - Google Pub/Sub
-  - Topic: `plan` (App → Runner). Subscription `plan-runner` (Runner pulls). Not yet used.
+  - Topic: `plan` (App → Runner). Push subscription `plan-runner` delivers to Runner.
 
 ## Event Flow
 
 1. GitHub → Webhook: events (ping, installation, pull_request).
 2. App service validates webhook signature and logs key details.
-3. Next: App service publishes `PlanRequest` to Pub/Sub topic `plan`.
-4. Runner (future): clone repo, run OpenTofu plan, comment results.
+3. App service publishes `PlanRequest` to Pub/Sub topic `plan`.
+4. Runner (push) clones repo, runs OpenTofu plan, comments results.
 
-## Pub/Sub Message Schema (PlanRequest) — upcoming
+## Pub/Sub Message Schema (PlanRequest)
 
 ```json
 {
@@ -66,15 +64,14 @@ Notes:
 ## Topics and Subscriptions
 
 - Topic: `plan`
-- Subscription: `plan-runner`
- 
-Create when implementing the runner.
+- Push Subscription: `plan-runner` → `https://<runner-url>/pubsub/push`
+  - Use OIDC push auth with a service account that has `roles/run.invoker` on the runner.
 
 ## Environment
 
 - App service: `GITHUB_WEBHOOK_SECRET` (required). Env vars only for POC.
 - Region: `us-east4`. GCP Project: devstage-419614.
-- Future runner: will add Pub/Sub and GitHub API vars.
+- Runner: HTTP service, expects Pub/Sub push (no subscriber config). Uses GitHub API via installation token.
 
 ## Permissions
 
@@ -82,10 +79,10 @@ Create when implementing the runner.
 - It needs to pull from Artifact Registry (`artifactregistry.reader`).
 - GitHub App: Permissions for now — Metadata (Read), Pull requests (Read). Install via GitHub UI.
 
-## Runner Plan (Up Next)
+## Runner Plan
 
-Flow target:
-- Clone repo@SHA, `tofu init/plan/show`, post sticky PR comment.
+Flow:
+- Receive push, clone repo@SHA, `tofu init/plan/show`, post sticky PR comment.
 
 Notes
 - Prefer `--no-color` to keep comments readable.
@@ -102,15 +99,19 @@ Notes
 
 Repo layout
 - `/app`: GitHub App service (TypeScript + Express + Octokit).
-- `/runner`: Runner service (Go), upcoming.
+- `/runner`: Runner service (Go, push HTTP). See `runner/internal/*`.
 
 Dev loop
 - Run the App locally: `cd app && npm i && export GITHUB_WEBHOOK_SECRET=dev && npm run dev`.
 
 ## Deployment (App)
 
-- Use `./app/deploy.sh` with `GITHUB_WEBHOOK_SECRET` exported. The script builds, pushes to Artifact Registry (`runners-poc`), and deploys to Cloud Run in `us-east4`.
+- Use `./app/deploy.sh` with `GITHUB_WEBHOOK_SECRET`, `GITHUB_APP_ID`, and `GITHUB_PRIVATE_KEY_PEM` exported. The script builds, pushes to Artifact Registry (`runners-poc`), and deploys to Cloud Run in `us-east4`.
 - Set your GitHub App webhook to `<Cloud Run URL>/webhook` and use the same secret.
+
+## Deployment (Runner)
+
+- Deploy with `./runner/deploy.sh`. Create push subscription `plan-runner` to `<runner-url>/pubsub/push` with OIDC push auth. Grant `roles/run.invoker` to the Pub/Sub push service account on the runner.
 
 ## Future Optimizations
 
