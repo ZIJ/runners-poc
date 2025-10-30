@@ -91,6 +91,15 @@ func main() {
             m.Ack()
             return
         }
+        // Helpful log for visibility that a message was received
+        logJSON("info", map[string]any{
+            "msg":        "message received",
+            "request_id": req.RequestID,
+            "repo":       req.Repo.FullName,
+            "pr":         req.PullRequest.Number,
+            "sha":        req.PullRequest.HeadSHA,
+            "plan_id":    req.Work.PlanID,
+        })
         // Default API base
         if req.GitHubAPIBaseURL == "" {
             req.GitHubAPIBaseURL = "https://api.github.com"
