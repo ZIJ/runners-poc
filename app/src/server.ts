@@ -95,8 +95,9 @@ webhooks.onError((error) => {
   );
 });
 
-// Mount Octokit middleware. Do not attach JSON/body parsers before this.
-app.use("/webhook", createNodeMiddleware(webhooks, { path: "/webhook" }));
+// Mount Octokit middleware at root with explicit path matching.
+// Important: do not prefix the mount path and the option path simultaneously.
+app.use(createNodeMiddleware(webhooks, { path: "/webhook" }));
 
 app.listen(PORT, () => {
   console.log(JSON.stringify({ level: "info", msg: `app listening on :${PORT}` }));
