@@ -3,7 +3,6 @@ package executor
 import (
     "bytes"
     "context"
-    "encoding/json"
     "fmt"
     "io"
     "net/url"
@@ -11,44 +10,56 @@ import (
     "os/exec"
     "path/filepath"
     "strings"
+    "time"
 
     "runner/internal/types"
 )
 
-func CloneAndPlan(ctx context.Context, req *types.PlanRequest) (string, error) {
+func CloneAndPlan(ctx context.Context, req *types.PlanRequest) (string, types.Timings, error) {
+    var t types.Timings
     tmp, err := os.MkdirTemp("", "runner-*")
-    if err != nil { return "", err }
+    if err != nil { return "", t, err }
     defer os.RemoveAll(tmp)
 
     repoDir := filepath.Join(tmp, "repo")
-    if err := os.MkdirAll(repoDir, 0o755); err != nil { return "", err }
+    if err := os.MkdirAll(repoDir, 0o755); err != nil { return "", t, err }
 
     remoteURL, err := buildTokenRemoteURL(req.Repo.CloneURL, req.Repo.FullName, req.Installation.Token)
-    if err != nil { return "", err }
+    if err != nil { return "", t, err }
 
     _ = runCmd(ctx, tmp, "git", "config", "--global", "--add", "safe.directory", repoDir)
-    if err := runCmd(ctx, repoDir, "git", "init"); err != nil { return "", err }
-    if err := runCmd(ctx, repoDir, "git", "remote", "add", "origin", remoteURL); err != nil { return "", err }
-    if err := runCmd(ctx, repoDir, "git", "fetch", "--depth=1", "origin", req.PullRequest.HeadSHA); err != nil { return "", fmt.Errorf("git fetch: %w", err) }
-    if err := runCmd(ctx, repoDir, "git", "checkout", "FETCH_HEAD"); err != nil { return "", err }
+    if err := runCmd(ctx, repoDir, "git", "init"); err != nil { return "", t, err }
+    if err := runCmd(ctx, repoDir, "git", "remote", "add", "origin", remoteURL); err != nil { return "", t, err }
+    if ms, err := timeIt(func() error { return runCmd(ctx, repoDir, "git", "fetch", "--depth=1", "origin", req.PullRequest.HeadSHA) }); err != nil {
+        return "", t, fmt.Errorf("git fetch: %w", err)
+    } else { t.GitFetchMS = ms }
+    if ms, err := timeIt(func() error { return runCmd(ctx, repoDir, "git", "checkout", "FETCH_HEAD") }); err != nil {
+        return "", t, err
+    } else { t.GitCheckoutMS = ms }
 
     workdir := repoDir
     if strings.TrimSpace(req.Work.Dir) != "" && req.Work.Dir != "." {
         workdir = filepath.Join(repoDir, req.Work.Dir)
     }
     if st, err := os.Stat(workdir); err != nil || !st.IsDir() {
-        return "", fmt.Errorf("work.dir not found: %s", workdir)
+        return "", t, fmt.Errorf("work.dir not found: %s", workdir)
     }
 
-    if err := runCmd(ctx, workdir, "tofu", "init", "-input=false", "-no-color"); err != nil { return "", fmt.Errorf("tofu init: %w", err) }
-    if err := runCmd(ctx, workdir, "tofu", "plan", "-input=false", "-no-color", "-out=tfplan.bin"); err != nil { return "", fmt.Errorf("tofu plan: %w", err) }
-    out, err := runCmdCapture(ctx, workdir, "tofu", "show", "-no-color", "tfplan.bin")
-    if err != nil { return "", fmt.Errorf("tofu show: %w", err) }
+    if ms, err := timeIt(func() error { return runCmd(ctx, workdir, "tofu", "init", "-input=false", "-no-color") }); err != nil {
+        return "", t, fmt.Errorf("tofu init: %w", err)
+    } else { t.TofuInitMS = ms }
+    if ms, err := timeIt(func() error { return runCmd(ctx, workdir, "tofu", "plan", "-input=false", "-no-color", "-out=tfplan.bin") }); err != nil {
+        return "", t, fmt.Errorf("tofu plan: %w", err)
+    } else { t.TofuPlanMS = ms }
+    var out []byte
+    if ms, o, err := timeItCapture(func() ([]byte, error) { return runCmdCapture(ctx, workdir, "tofu", "show", "-no-color", "tfplan.bin") }); err != nil {
+        return "", t, fmt.Errorf("tofu show: %w", err)
+    } else { t.TofuShowMS = ms; out = o }
 
     var planOut string = string(out)
     const maxLen = 200_000
     if len(planOut) > maxLen { planOut = planOut[:maxLen] + "\n... (truncated)" }
-    return planOut, nil
+    return planOut, t, nil
 }
 
 func buildTokenRemoteURL(cloneURL, fullName, token string) (string, error) {
@@ -84,9 +95,16 @@ func runCmdCapture(ctx context.Context, dir, name string, args ...string) ([]byt
     return out.Bytes(), nil
 }
 
-// Small helper for JSON pretty error snippets when needed.
-func toJSON(v any) string {
-    b, _ := json.Marshal(v)
-    return string(b)
+// timeIt runs an action and returns its elapsed time in milliseconds and any error.
+func timeIt(action func() error) (int64, error) {
+    start := time.Now()
+    err := action()
+    return time.Since(start).Milliseconds(), err
 }
 
+// timeItCapture runs an action that returns output, and reports elapsed ms and returned values.
+func timeItCapture(action func() ([]byte, error)) (int64, []byte, error) {
+    start := time.Now()
+    out, err := action()
+    return time.Since(start).Milliseconds(), out, err
+}

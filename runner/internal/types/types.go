@@ -36,3 +36,15 @@ type PubSubPush struct {
     Subscription string `json:"subscription"`
 }
 
+// Timings holds per-step durations in milliseconds.
+type Timings struct {
+    QueueToRunnerMS int64 `json:"queue_to_runner_ms"`
+    GitFetchMS      int64 `json:"git_fetch_ms"`
+    GitCheckoutMS   int64 `json:"git_checkout_ms"`
+    TofuInitMS      int64 `json:"tofu_init_ms"`
+    TofuPlanMS      int64 `json:"tofu_plan_ms"`
+    TofuShowMS      int64 `json:"tofu_show_ms"`
+    CommentListMS   int64 `json:"comment_list_ms"`
+    CommentUpsertMS int64 `json:"comment_upsert_ms"`
+    TotalRunMS      int64 `json:"total_run_ms"`
+}
