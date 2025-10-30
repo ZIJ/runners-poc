@@ -7,7 +7,7 @@ This document guides contributors and automation on how this POC is structured. 
 - GitHub App service (`/app`, TypeScript)
   - Receives `pull_request` webhooks (opened, synchronized, reopened) and logs events.
   - Validates webhook signatures (`GITHUB_WEBHOOK_SECRET`).
-  - Planned next: publish to Pub/Sub topic `plan`.
+  - Publishes `PlanRequest` messages to Pub/Sub topic `plan`.
 
 - Runner service (`/runner`, Go)
   - Exposes `POST /pubsub/push` on Cloud Run (push delivery).
@@ -69,7 +69,7 @@ Notes:
 
 ## Environment
 
-- App service: `GITHUB_WEBHOOK_SECRET` (required). Env vars only for POC.
+- App service: `GITHUB_WEBHOOK_SECRET`, `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_PEM` (required for publishing with installation token).
 - Region: `us-east4`. GCP Project: devstage-419614.
 - Runner: HTTP service, expects Pub/Sub push (no subscriber config). Uses GitHub API via installation token.
 
@@ -77,7 +77,11 @@ Notes:
 
 - Cloud Run service uses `app-service-sa@devstage-419614.iam.gserviceaccount.com`.
 - It needs to pull from Artifact Registry (`artifactregistry.reader`).
-- GitHub App: Permissions for now — Metadata (Read), Pull requests (Read). Install via GitHub UI.
+- GitHub App permissions (minimum for POC):
+  - Metadata: Read
+  - Contents: Read (for clone)
+  - Issues: Read & write (to create/update PR issue comments)
+  - Pull requests: Read (optional; used for webhook events)
 
 ## Runner Plan
 

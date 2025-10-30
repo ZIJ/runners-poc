@@ -25,10 +25,8 @@ gcloud run deploy "${SERVICE}" \
   --region="${REGION}" \
   --image="${IMAGE}" \
   --allow-unauthenticated \
-  --service-account="${SA_EMAIL}" \
-  --set-env-vars="PUBSUB_SUBSCRIPTION_PLAN=plan-runner"
+  --service-account="${SA_EMAIL}"
 
 URL="$(gcloud run services describe "${SERVICE}" --project="${PROJECT}" --region="${REGION}" --format='value(status.url)')"
 echo "URL: ${URL}"
 echo "Health: ${URL}/healthz"
-

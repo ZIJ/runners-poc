@@ -1,9 +1,12 @@
 # Plan: Runner Service (Go) — Clone → OpenTofu Plan → PR Comment
 
+Note
+- This task describes a pull-subscriber runner. It has been superseded by Task 03, which migrates to a push-based HTTP runner on Cloud Run. See `agent-tasks/03-runner-service-push-delivery.md` for the current architecture and wiring. The plan execution and commenting details here still apply conceptually.
+
 Goal
 - Implement a minimal runner on Cloud Run (us-east4) that consumes `plan` jobs from Pub/Sub, shallow‑clones the repo at the PR head SHA, runs OpenTofu plan, and posts/updates a PR comment with the plan output.
 
-Scope (now)
+Scope (historical)
 - Pull from Pub/Sub subscription `plan-runner`.
 - Auth to GitHub via installation token provided in message.
 - Local state (no remote backend). No provider cache optimization yet.
@@ -67,7 +70,7 @@ Step-by-step
 7) Ack/Nack and cleanup
 - On success: ack. On transient error (GitHub 5xx, rate limit) → nack with backoff. Always cleanup temp dir.
 
-8) Container & deploy
+8) Container & deploy (historical)
 - Dockerfile installs `git`, `curl`, `ca-certificates`, and OpenTofu Linux amd64.
 - Env: `PUBSUB_SUBSCRIPTION_PLAN=plan-runner`, `GITHUB_API_BASE_URL` (optional).
 - Deploy Cloud Run `runner` in `us-east4` with service account having `roles/pubsub.subscriber`.

@@ -50,6 +50,21 @@ gcloud pubsub subscriptions create plan-runner \
   --push-auth-token-audience="${RUNNER_URL}/pubsub/push"
 ```
 
+Dev quickstart (public)
+- For development, you can make the runner public and create an unauthenticated push subscription:
+```
+gcloud run services add-iam-policy-binding runner \
+  --project devstage-419614 --region us-east4 \
+  --member allUsers --role roles/run.invoker
+
+gcloud pubsub subscriptions delete plan-runner --project devstage-419614 || true
+
+gcloud pubsub subscriptions create plan-runner \
+  --project devstage-419614 \
+  --topic plan \
+  --push-endpoint="$(gcloud run services describe runner --project devstage-419614 --region us-east4 --format='value(status.url)')/pubsub/push"
+```
+
 IAM
 - App service account: needs `roles/pubsub.publisher` on topic `plan`.
 - Runner Cloud Run service account: no Pub/Sub role needed for push delivery; does need Artifact Registry pull.
@@ -69,4 +84,3 @@ Next
 - Add optional OIDC token verification in the handler (validate audience/issuer).
 - Provider warm-start and repo checkout caching.
 - Coalescing plan runs per PR head.
-
