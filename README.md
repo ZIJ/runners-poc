@@ -20,3 +20,4 @@ A proof‑of‑concept for “Vercel‑for‑Terraform”, but powered by OpenTo
 
 ## Deploy (App service)
 - Set `GITHUB_WEBHOOK_SECRET` and run `./app/deploy.sh`. Use the printed URL as your GitHub App webhook endpoint (`/webhook`).
+
