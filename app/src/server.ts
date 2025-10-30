@@ -56,6 +56,39 @@ webhooks.on(["pull_request.synchronize", "pull_request.reopened"], async ({ id, 
   );
 });
 
+// Log ping to verify webhook setup
+webhooks.on("ping", async ({ id }) => {
+  console.log(JSON.stringify({ level: "info", event: "ping", delivery: id }));
+});
+
+// Log installation events to aid setup/verification
+webhooks.on(["installation.created", "installation.deleted"], async ({ id, payload, name }) => {
+  console.log(
+    JSON.stringify({
+      level: "info",
+      event: name,
+      delivery: id,
+      installation_id: payload.installation?.id,
+      account: payload.installation?.account?.login,
+    })
+  );
+});
+webhooks.on([
+  "installation_repositories.added",
+  "installation_repositories.removed",
+], async ({ id, payload, name }) => {
+  console.log(
+    JSON.stringify({
+      level: "info",
+      event: name,
+      delivery: id,
+      installation_id: payload.installation?.id,
+      repos_added: (payload.repositories_added || []).map((r: any) => r.full_name),
+      repos_removed: (payload.repositories_removed || []).map((r: any) => r.full_name),
+    })
+  );
+});
+
 webhooks.onError((error) => {
   console.error(
     JSON.stringify({ level: "error", msg: error.message, name: error.name, stack: error.stack })
@@ -68,4 +101,3 @@ app.use("/webhook", createNodeMiddleware(webhooks, { path: "/webhook" }));
 app.listen(PORT, () => {
   console.log(JSON.stringify({ level: "info", msg: `app listening on :${PORT}` }));
 });
-

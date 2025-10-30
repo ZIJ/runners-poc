@@ -1,17 +1,16 @@
 # AGENTS Guide: Managed Runners POC (OpenTofu)
 
-This document guides contributors and automation on how this POC is structured and how to extend it. The goal is to build a minimal end‑to‑end system: a GitHub App receives PR events, enqueues a plan job on Pub/Sub, and a runner on Cloud Run executes OpenTofu and comments the plan back on the PR.
+This document guides contributors and automation on how this POC is structured. Target: GitHub App receives PR events, publishes a plan job (topic `plan`), and a runner on Cloud Run executes OpenTofu and comments the plan back on the PR.
 
 ## High‑Level Architecture
 
 - GitHub App service (`/app`, TypeScript)
-  - Receives `pull_request` webhooks (opened, synchronized, reopened).
-  - Determines target working directory(s) to plan (start with repo root for POC).
-  - Creates a message for Pub/Sub with repo + PR details and an installation access token.
-  - Publishes to `tofu-plan-requests` topic.
+  - Receives `pull_request` webhooks (opened, synchronized, reopened) and logs events.
+  - Validates webhook signatures (`GITHUB_WEBHOOK_SECRET`).
+  - Planned next: publish to Pub/Sub topic `plan`.
 
 - Runner service (`/runner`, Go)
-  - Subscribes to `tofu-plan-requests`.
+  - Subscribes to `plan`.
   - Checks out the repository at the specified ref.
   - Runs `opentofu init` and `opentofu plan` (no-color), captures output.
   - Posts or updates a PR comment with the plan result.
@@ -21,19 +20,16 @@ This document guides contributors and automation on how this POC is structured a
   - Uses dedicated service accounts with least-privilege IAM.
 
 - Google Pub/Sub
-  - Topic: `plan` (App → Runner).
-  - Subscription: `plan-runner` (Runner pulls).
+  - Topic: `plan` (App → Runner). Subscription `plan-runner` (Runner pulls). Not yet used.
 
 ## Event Flow
 
-1. GitHub → Webhook: `pull_request` event (opened/synchronize/reopen).
-2. App service validates webhook signature and fetches installation access token.
-3. App service publishes a `PlanRequest` to Pub/Sub topic `plan`.
-4. Runner service receives the message, clones the repo at the specified ref.
-5. Runner executes OpenTofu init/plan, collects a human-readable plan output.
-6. Runner posts/updates a PR comment with the plan result, links to logs if helpful.
+1. GitHub → Webhook: events (ping, installation, pull_request).
+2. App service validates webhook signature and logs key details.
+3. Next: App service publishes `PlanRequest` to Pub/Sub topic `plan`.
+4. Runner (future): clone repo, run OpenTofu plan, comment results.
 
-## Pub/Sub Message Schema (PlanRequest)
+## Pub/Sub Message Schema (PlanRequest) — upcoming
 
 ```json
 {
@@ -64,63 +60,32 @@ This document guides contributors and automation on how this POC is structured a
 ```
 
 Notes:
-- For the POC, `work.dir` is the repo root (`.`). Multi-dir support can follow.
-- The App service is responsible for including a valid installation token to avoid the runner having to mint one.
+- Start with `work.dir` at repo root (`.`). Multi-dir support can follow.
+- App will include an installation token later when runner needs it.
 
 ## Topics and Subscriptions
 
 - Topic: `plan`
 - Subscription: `plan-runner`
+ 
+Create when implementing the runner.
 
-Create these during infra bootstrap or at deploy time.
+## Environment
 
-## Environments and Secrets
+- App service: `GITHUB_WEBHOOK_SECRET` (required). Env vars only for POC.
+- Region: `us-east4`. GCP Project: devstage-419614.
+- Future runner: will add Pub/Sub and GitHub API vars.
 
-Shared
-- `GCP_PROJECT_ID`: GCP project holding Pub/Sub and Cloud Run.
-- `RUNTIME_REGION`: `us-east4`.
+## Permissions
 
-App service (TypeScript)
-- `GITHUB_APP_ID`: Numeric GitHub App ID.
-- `GITHUB_WEBHOOK_SECRET`: HMAC secret for webhook signature verification.
-- `GITHUB_PRIVATE_KEY_PEM`: PEM contents of the GitHub App private key.
-- `PUBSUB_TOPIC_PLAN`: `plan`.
-- `GITHUB_API_BASE_URL` (optional): default `https://api.github.com`.
-- Access to Secret Manager is recommended for sensitive values.
+- Cloud Run service uses `app-service-sa@devstage-419614.iam.gserviceaccount.com`.
+- It needs to pull from Artifact Registry (`artifactregistry.reader`).
+- GitHub App: Permissions for now — Metadata (Read), Pull requests (Read). Install via GitHub UI.
 
-Runner service (Go)
-- `PUBSUB_SUBSCRIPTION_PLAN`: `plan-runner`.
-- `GITHUB_API_BASE_URL` (optional): default `https://api.github.com`.
-- `TOFU_VERSION` (optional): pin OpenTofu version or use image default.
-- The runner expects an `installation.token` in each message for checkout and commenting.
+## Runner Plan (Up Next)
 
-## IAM and Permissions
-
-- App service account
-  - `roles/pubsub.publisher` on topic `plan`.
-  - `roles/secretmanager.secretAccessor` for GitHub secrets.
-  - `roles/logging.logWriter` for structured logs.
-
-- Runner service account
-  - `roles/pubsub.subscriber` on subscription `plan-runner`.
-  - `roles/secretmanager.secretAccessor` if secrets are needed.
-  - `roles/logging.logWriter`.
-
-GitHub App permissions
-- Pull requests: Read & write (post comments).
-- Contents: Read (clone via token).
-- Metadata: Read.
-- Checks: Write (optional, future for richer reporting).
-
-## OpenTofu Execution (Runner)
-
-Minimal POC flow per message:
-- Clone: `git clone <clone_url> && git checkout <head_sha>`.
-- Working dir: `work.dir` from message (default `.`).
-- Init: `tofu init -input=false -no-color`.
-- Plan: `tofu plan -input=false -no-color -out=tfplan.bin`.
-- Show: `tofu show -no-color tfplan.bin` → capture string.
-- Comment: Post a sticky PR comment identified by `plan_id` (update if it exists).
+Flow target:
+- Clone repo@SHA, `tofu init/plan/show`, post sticky PR comment.
 
 Notes
 - Prefer `--no-color` to keep comments readable.
@@ -135,25 +100,17 @@ Notes
 
 ## Local Development
 
-Repo layout (proposed)
-- `/app`: GitHub App service (TypeScript, Express/Fastify + Octokit).
-- `/runner`: Runner service (Go, Pub/Sub + GitHub API + OpenTofu CLI).
-- `/infra` (optional): IaC for topics, subscriptions, and Cloud Run services.
+Repo layout
+- `/app`: GitHub App service (TypeScript + Express + Octokit).
+- `/runner`: Runner service (Go), upcoming.
 
-Useful tooling
-- Pub/Sub emulator: `gcloud beta emulators pubsub start` and set `PUBSUB_EMULATOR_HOST`.
-- Webhook tunneling: use your preferred tunnel to expose `/webhook` locally.
+Dev loop
+- Run the App locally: `cd app && npm i && export GITHUB_WEBHOOK_SECRET=dev && npm run dev`.
 
-Dev loop (suggested)
-- Run the App locally, receive a real or simulated PR webhook, publish to emulator.
-- Run the Runner locally, pull from emulator, execute plan with a local OpenTofu install.
+## Deployment (App)
 
-## Deployment (Cloud Run, `us-east4`)
-
-- Build and push containers for `/app` and `/runner`.
-- Create Pub/Sub topic and subscription.
-- Deploy both services to Cloud Run with appropriate env vars and service accounts.
-- Verify webhook delivery → Pub/Sub publish → runner execution → PR comment.
+- Use `./app/deploy.sh` with `GITHUB_WEBHOOK_SECRET` exported. The script builds, pushes to Artifact Registry (`runners-poc`), and deploys to Cloud Run in `us-east4`.
+- Set your GitHub App webhook to `<Cloud Run URL>/webhook` and use the same secret.
 
 ## Future Optimizations
 
