@@ -15,8 +15,5 @@ A proof‑of‑concept for “Vercel‑for‑Terraform”, but powered by OpenTo
 ## Status
 - App service scaffolding done; deployable to Cloud Run; logs ping/installation/PR opened events. Runner TBD.
 
-## Next
-- Wire App → Pub/Sub (`plan`) and implement `/runner` (Go) to execute `opentofu plan` and comment back.
-
 ## Deploy (App service)
 - Set `GITHUB_WEBHOOK_SECRET` and run `./app/deploy.sh`. Use the printed URL as your GitHub App webhook endpoint (`/webhook`).
